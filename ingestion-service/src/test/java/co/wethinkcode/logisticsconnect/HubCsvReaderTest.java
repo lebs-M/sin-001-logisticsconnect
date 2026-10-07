@@ -89,6 +89,41 @@ void readPreservesMessyHeaderPaddingAndValueCasingBecauseCleaningHappensLater() 
         assertEquals(List.of(new Hub("H-500", "Gauteng", "Johannesburg Central", "Y")), hubs);
     }
 
+
+    // Scenario #1.4 - Read an empty hub CSV                  (Acceptance 8, Acceptance 9)
+
+    /**
+     * A CSV with a header row and no data rows is valid input with an empty
+     * answer, not an error. Truncated and freshly created exports are normal.
+     */
+    @Test
+    void readReturnsEmptyListForAHeaderOnlyCsv() {
+        String headerOnly = "hub_id, Province ,sorting_center,active\n";
+
+        List<Hub> hubs = HubCsvReader.read(streamOf(headerOnly));
+
+        assertTrue(hubs.isEmpty());
+    }
+
+    /**
+     * Blank lines, whitespace-only lines and a trailing newline are structural
+     * noise, not hub records.
+     */
+    @Test
+    void readIgnoresBlankLinesAndTrailingNewline() {
+        String padded = "hub_id,Province,sorting_center,active\n"
+                + "\n"
+                + "H-500,Gauteng,Johannesburg Central,Y\n"
+                + "   \n"
+                + "H-501,Western Cape,Cape Town Port,no\n"
+                + "\n";
+
+        List<Hub> hubs = HubCsvReader.read(streamOf(padded));
+
+        assertEquals(2, hubs.size());
+        assertEquals(List.of("H-500", "H-501"), hubs.stream().map(Hub::hubId).toList());
+    }
+
     private static InputStream streamOf(String content) {
         return new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8));
     }
