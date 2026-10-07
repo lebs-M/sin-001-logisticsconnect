@@ -7,8 +7,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class HubCsvReaderTest {
 
@@ -122,6 +121,25 @@ void readPreservesMessyHeaderPaddingAndValueCasingBecauseCleaningHappensLater() 
 
         assertEquals(2, hubs.size());
         assertEquals(List.of("H-500", "H-501"), hubs.stream().map(Hub::hubId).toList());
+    }
+
+
+
+    // Scenario #1.5 - Reject CSV with a missing required column        (Acceptance 10)
+    /**
+     * A CSV missing a required column is rejected instead of yielding records
+     * with silently empty fields.
+     */
+    @Test
+    void readFailsFastWhenARequiredColumnIsMissing() {
+        String missingActive = "hub_id,province,sorting_center\n"
+                + "H-500,Gauteng,Johannesburg Central\n";
+
+        IllegalArgumentException thrown =
+                assertThrows(IllegalArgumentException.class, () -> HubCsvReader.read(streamOf(missingActive)));
+
+        assertTrue(thrown.getMessage().contains("active"), thrown.getMessage());
+        assertTrue(thrown.getMessage().contains("sorting_center"), thrown.getMessage());
     }
 
     private static InputStream streamOf(String content) {
