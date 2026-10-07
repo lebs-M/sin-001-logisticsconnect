@@ -24,7 +24,6 @@ public final class HubCsvReader {
 
     /**
      * Reads hub records from the given CSV stream.
-     *
      * @throws UncheckedIOException  if the stream cannot be read
      * @throws IllegalArgumentException if the CSV is structurally malformed
      */
@@ -42,6 +41,9 @@ public final class HubCsvReader {
 
             String[] row;
             while ((row = reader.readNext()) != null) {
+                if (isBlank(row)) {
+                    continue;
+                }
                 hubs.add(new Hub(
                         named(row, columns, "hub_id"),
                         named(row, columns, "province"),
@@ -70,5 +72,17 @@ public final class HubCsvReader {
     private static String named(String[] row, Map<String, Integer> columns, String name) {
         Integer index = columns.get(name);
         return index == null || index >= row.length ? "" : row[index];
+    }
+
+    /**
+     * A row is blank when every cell it holds is blank.
+     */
+    private static boolean isBlank(String[] row) {
+        for (String cell : row) {
+            if (cell != null && !cell.isBlank()) {
+                return false;
+            }
+        }
+        return true;
     }
 }
