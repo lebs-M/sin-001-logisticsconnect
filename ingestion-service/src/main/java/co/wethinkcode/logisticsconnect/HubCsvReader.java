@@ -19,6 +19,10 @@ import java.util.Map;
  */
 public final class HubCsvReader {
 
+    /** Header names the export must supply for a row to be mapped at all. */
+    private static final List<String> REQUIRED_COLUMNS =
+            List.of("hub_id", "province", "sorting_center", "active");
+
     private HubCsvReader() {
     }
 
@@ -38,6 +42,7 @@ public final class HubCsvReader {
             }
 
             Map<String, Integer> columns = indexColumns(header);
+            requireColumns(columns, header);
 
             String[] row;
             while ((row = reader.readNext()) != null) {
@@ -72,6 +77,19 @@ public final class HubCsvReader {
     private static String named(String[] row, Map<String, Integer> columns, String name) {
         Integer index = columns.get(name);
         return index == null || index >= row.length ? "" : row[index];
+    }
+
+    /**
+     * Fails fast when a header the reader needs is absent.
+     */
+    private static void requireColumns(Map<String, Integer> columns, String[] header) {
+        for (String required : REQUIRED_COLUMNS) {
+            if (!columns.containsKey(required)) {
+                throw new IllegalArgumentException(
+                        "Hub CSV is missing the required column \"" + required
+                                + "\". Headers found: " + String.join(", ", header));
+            }
+        }
     }
 
     /**
