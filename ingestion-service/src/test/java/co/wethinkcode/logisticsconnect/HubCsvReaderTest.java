@@ -71,7 +71,25 @@ void readPreservesMessyHeaderPaddingAndValueCasingBecauseCleaningHappensLater() 
     assertEquals("h-501", hubs.get(1).hubId());
 }
 
-private static InputStream streamOf(String content) {
-    return new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8));
+
+
+    //Scenario #1.3 - Match columns regardless of header     (Acceptance 3)
+
+
+    /**
+     * Columns are matched by name regardless of header casing.
+     */
+    @Test
+    void readMatchesHeadersRegardlessOfCasing() {
+        String reorderedHeaders = "ACTIVE,Sorting_Center,PROVINCE,HUB_ID\n"
+                + "Y,Johannesburg Central,Gauteng,H-500\n";
+
+        List<Hub> hubs = HubCsvReader.read(streamOf(reorderedHeaders));
+
+        assertEquals(List.of(new Hub("H-500", "Gauteng", "Johannesburg Central", "Y")), hubs);
+    }
+
+    private static InputStream streamOf(String content) {
+        return new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8));
     }
 }
