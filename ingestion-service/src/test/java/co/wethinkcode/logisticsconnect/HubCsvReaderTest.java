@@ -1,10 +1,13 @@
 package co.wethinkcode.logisticsconnect;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -140,6 +143,50 @@ void readPreservesMessyHeaderPaddingAndValueCasingBecauseCleaningHappensLater() 
 
         assertTrue(thrown.getMessage().contains("active"), thrown.getMessage());
         assertTrue(thrown.getMessage().contains("sorting_center"), thrown.getMessage());
+    }
+
+
+
+    // Scenario #1.6 - Read the bundled CSV and other sources  (AC 5, 6, 7)
+
+    /**
+     * read() with no argument loads the bundled hubs-global.csv from the
+     * classpath - the entry point the running service uses, so it must work with
+     * no configuration.
+     */
+    @Test
+    void readReadsTheBundledHubsGlobalCsvByDefault() {
+        List<Hub> hubs = HubCsvReader.read();
+
+        assertFalse(hubs.isEmpty(), "expected the bundled hubs-global.csv to yield hub records");
+        assertEquals(18, hubs.size());
+        assertEquals("H-500", hubs.get(0).hubId());
+    }
+
+    /**
+     * read(Path) reads a CSV file from disk, so a caller can supply a different
+     * export without touching the classpath.
+     */
+    @Test
+    void readAcceptsAFilePath(@TempDir Path tempDir) throws Exception {
+        Path csv = tempDir.resolve("hubs.csv");
+        Files.writeString(csv, VALID_CSV, StandardCharsets.UTF_8);
+
+        List<Hub> hubs = HubCsvReader.read(csv);
+
+        assertEquals(3, hubs.size());
+    }
+
+    /**
+     * read(InputStream) reads CSV data supplied directly, and returns the same
+     * shape as the other two entry points. All three share one implementation,
+     * so they cannot drift apart.
+     */
+    @Test
+    void readAcceptsAStreamSoCallersCanSupplyTheirOwnCsv() {
+        List<Hub> hubs = HubCsvReader.read(streamOf(VALID_CSV));
+
+        assertEquals(3, hubs.size());
     }
 
     private static InputStream streamOf(String content) {
