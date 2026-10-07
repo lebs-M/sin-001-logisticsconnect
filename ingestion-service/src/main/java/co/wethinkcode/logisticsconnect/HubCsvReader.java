@@ -9,6 +9,8 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -23,7 +25,37 @@ public final class HubCsvReader {
     private static final List<String> REQUIRED_COLUMNS =
             List.of("hub_id", "province", "sorting_center", "active");
 
+    /** Classpath location of the export the service ships with. */
+    private static final String BUNDLED_CSV = "/hubs-global.csv";
+
     private HubCsvReader() {
+    }
+
+    /**
+     * Reads hub records from the bundled {@code hubs-global.csv}.
+     * @throws IllegalStateException    if the bundled export is not on the classpath
+     * @throws UncheckedIOException     if the stream cannot be read
+     * @throws IllegalArgumentException if the CSV is structurally malformed
+     */
+    public static List<Hub> read() {
+        InputStream in = HubCsvReader.class.getResourceAsStream(BUNDLED_CSV);
+        if (in == null) {
+            throw new IllegalStateException("Bundled hub CSV not found on the classpath: " + BUNDLED_CSV);
+        }
+        return read(in);
+    }
+
+    /**
+     * Reads hub records from the given CSV file.
+     * @throws UncheckedIOException     if the file cannot be opened or read
+     * @throws IllegalArgumentException if the CSV is structurally malformed
+     */
+    public static List<Hub> read(Path file) {
+        try {
+            return read(Files.newInputStream(file));
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read hub CSV file " + file, e);
+        }
     }
 
     /**
