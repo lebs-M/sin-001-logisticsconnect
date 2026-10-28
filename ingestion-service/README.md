@@ -79,16 +79,25 @@ mvn package
 java -jar target/ingestion-service.jar
 ```
 
-Listens on port `7050`. Currently just exposes `/health` — the actual CSV
-parsing/cleaning logic is a TODO.
+Listens on port `7050`.
+
+Endpoints:
+
+- `GET /health` — liveness check
+- `GET /hubs` — cleaned, deduplicated hub records
+- `GET /hubs/{hubId}` — lookup by canonical ID or any historical alias
+- `GET /stats` — raw row, cleaned row, duplicate, and skipped counts
+
+The cleaner trims and collapses whitespace, normalizes IDs/provinces/booleans,
+resolves placeholders to `null`, infers missing provinces from matching sorting
+centers, and deduplicates by normalized province + sorting center. Every original
+ID is kept in the record's `aliases` array.
 
 ## Test
 
-No automated tests yet. Manually verify it's up:
+Automated tests cover the cleaning rules, deduplication, and the real
+`hubs-global.csv` export:
 
 ```
-curl http://localhost:7050/health   # -> OK
+mvn test
 ```
-
-To add real tests, add JUnit 5 + the Surefire plugin to `pom.xml`, put tests under
-`src/test/java/co/wethinkcode/logisticsconnect/`, and run `mvn test`.

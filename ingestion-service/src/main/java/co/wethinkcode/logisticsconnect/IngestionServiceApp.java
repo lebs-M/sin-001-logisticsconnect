@@ -1,67 +1,74 @@
 package co.wethinkcode.logisticsconnect;
 
 import io.javalin.Javalin;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.io.InputStream;
-import java.io.UncheckedIOException;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 public class IngestionServiceApp {
 
-    private static final Logger log = LoggerFactory.getLogger(IngestionServiceApp.class);
-    public static final int PORT = 7050;
+    public static void main(String[] args) throws Exception {
+        HubCsvCleaner.CleanResult result = loadCleanedHubs();
+        List<CleanedHub> hubs = result.hubs();
+        Map<String, CleanedHub> hubsById = indexHubs(hubs);
 
-    public static void main(String[] args) {
-        IngestionReport report = new HubCsvCleaner().clean(loadCsv());
-        log.info("Cleaned {} rows -> {} hub records ({} duplicates merged, {} placeholders, {} invalid values)",
-                report.stats().rowsRead(), report.stats().recordsExposed(),
-                report.stats().duplicatesMerged(), report.stats().placeholdersReplaced(),
-                report.stats().invalidValues());
-
-
-
-        Javalin app = Javalin.create().start(PORT);
-
+        Javalin app = Javalin.create().start(7050);
         app.get("/health", ctx -> ctx.result("OK"));
 
-
-
-        // TODO: read and clean src/main/resources/hubs-global.csv (hubs, sorting centers, regional districts data —
-        // trim whitespace, fix casing, normalize dates/booleans) and expose the
-        // cleaned records here for the other services to consume.
-
-
-        app.get("/hubs", ctx -> ctx.json(report.hubs()));
+        app.get("/hubs", ctx -> ctx.json(hubs));
 
         app.get("/hubs/{hubId}", ctx -> {
-            String hubId = ctx.pathParam("hubId").toUpperCase();
-            report.hubs().stream()
-                    .filter(hub -> hub.hubId().equals(hubId))
-                    .findFirst()
-                    .ifPresentOrElse(
-                            ctx::json,
-                            () -> ctx.status(404).json(Map.of(
-                                    "error", "unknown hub",
-                                    "hubId", hubId)));
+            String requestedId = ctx.pathParam("hubId");
+            String normalizedId = HubCsvCleaner.normalizeHubId(requestedId);
+            CleanedHub hub = normalizedId == null ? null : hubsById.get(normalizedId);
+            if (hub == null) {
+                ctx.status(404).json(error("Hub not found", requestedId));
+                return;
+            }
+            ctx.json(hub);
         });
 
-        app.get("/stats", ctx -> ctx.json(report.stats()));
+        app.get("/stats", ctx -> ctx.json(Map.of(
+                "rawRows", result.rawRowCount(),
+                "cleanedHubs", hubs.size(),
+                "duplicateRowsRemoved", result.duplicateRowsRemoved(),
+                "skippedRows", result.skippedRows()
+        )));
 
-        app.get("/report", ctx -> ctx.json(report));
+        Runtime.getRuntime().addShutdownHook(new Thread(app::stop));
     }
 
-    static String loadCsv() {
-        try (InputStream in = IngestionServiceApp.class.getResourceAsStream("/hubs-global.csv")) {
-            if (in == null) {
+    private static HubCsvCleaner.CleanResult loadCleanedHubs() throws Exception {
+        try (InputStream input = IngestionServiceApp.class.getResourceAsStream("/hubs-global.csv")) {
+            if (input == null) {
                 throw new IllegalStateException("hubs-global.csv not found on the classpath");
             }
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not read hubs-global.csv", e);
+            HubCsvCleaner cleaner = new HubCsvCleaner();
+            return cleaner.clean(new InputStreamReader(input, StandardCharsets.UTF_8));
         }
+    }
+
+    private static Map<String, CleanedHub> indexHubs(List<CleanedHub> hubs) {
+        Map<String, CleanedHub> index = new HashMap<>();
+        for (CleanedHub hub : hubs) {
+            index.put(hub.hubId().toUpperCase(Locale.ROOT), hub);
+            for (String alias : hub.aliases()) {
+                index.put(alias.toUpperCase(Locale.ROOT), hub);
+            }
+        }
+        return Map.copyOf(index);
+    }
+
+    private static Map<String, Object> error(String message, String hubId) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", message);
+        body.put("hubId", hubId);
+        return body;
     }
 }
