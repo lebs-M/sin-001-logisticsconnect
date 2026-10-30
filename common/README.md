@@ -54,15 +54,28 @@ from their own directories at the project root).
 docker compose ps          # confirm the broker container is healthy
 ```
 
-Once the TODOs below are implemented, verify end-to-end by publishing a message from
-`delay-stage-service` and confirming the consumer(s) receive it — e.g. via logs, or by
-watching the topic in the web console.
+Verify end-to-end by publishing a stage change and checking the consumers:
 
-## TODO
+```
+curl -X POST http://localhost:7052/delay-stage/H-501 \
+  -H 'Content-Type: application/json' -d '{"stage": 5}'
 
-- Add `activemq-client` publish logic to `delay-stage-service` on its stage/state-change endpoint.
-- Add `activemq-client` subscriber logic to consumer service(s) above, replacing any
-  direct synchronous calls to `delay-stage-service`.
-- `alertbot` (stretch goal) needs its own subscriber logic too — its `pom.xml`
-  already has the `activemq-client` dependency alongside the other participating
-  services.
+# transit-service should now report stage 5 from its MQ-fed cache
+curl http://localhost:7053/delays/H-501
+
+# alertbot should have raised a simulated alert (threshold default 4)
+curl http://localhost:7054/alerts
+```
+
+Producer/consumer logs and the ActiveMQ web console
+(http://localhost:8161, admin/admin) also show messages on the topic.
+
+## Implementation
+
+- `delay-stage-service` publishes `{hubId, stage, timestamp}` on every accepted
+  stage change.
+- `transit-service` subscribes and keeps an in-memory stage cache; it no longer
+  calls delay-stage-service synchronously.
+- `alertbot` subscribes and raises a simulated post at or above its threshold.
+- Both consumers run a daemon reconnect loop, so starting them before the broker is
+  up is safe.

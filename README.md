@@ -28,14 +28,19 @@ cleanup through synchronous REST calls to asynchronous MQ decoupling and alertin
 Plus [`common/`](common) (no port) — the shared ActiveMQ broker and MQ config notes
 for `package-status-topic`: Package status updates move from latency-driven RPC to bandwidth-driven messaging.
 
-**Status:** scaffold only — build files, Javalin bootstrap, and TODOs are in place; no
-business logic has been implemented yet.
+**Status:** implemented — all four stages are complete. The cleaned CSV is served by
+ingestion-service, the REST services are wired together, stage changes flow through
+ActiveMQ, and AlertBot posts simulated alerts. Unit tests cover the CSV cleaning,
+ETA calculation, stage storage, and alert threshold logic.
 
-## Your task
+## What was implemented
 
-Implement the four stages below, in order — each one builds on the last, and the
-later stages assume the earlier ones work. Stage 1-3 are required; stage 4 is a
-stretch goal if you have time left.
+| Stage | Result |
+|---|---|
+| 1. Clean `hubs-global.csv` | 18 raw rows → 10 deduplicated hubs; casing, padding, boolean flags, province spelling variants, and placeholders are normalized; missing provinces are inferred from matching sorting centers. |
+| 2. Wire up the REST services | hub-service loads cleaned hubs from ingestion-service and serves provinces/sorting centers; delay-stage-service stores stages 0-8; transit-service returns an ETA window for any hub. |
+| 3. Decouple with the MQ topic | delay-stage-service publishes `{hubId, stage, timestamp}` to `package-status-topic`; transit-service keeps an in-memory stage cache fed by the topic instead of calling delay-stage-service. |
+| 4. AlertBot | alertbot subscribes to the same topic and simulates a social post when a stage is at or above the threshold (default `4`). |
 
 | Stage | Required? | What "done" looks like | Rough effort |
 |---|---|---|---|
@@ -74,6 +79,45 @@ duplicated into each participating service.
 - **Consumers:** `transit-service` (replacing its direct REST call to
   delay-stage-service) and, for the stretch goal, `alertbot`.
 - **Example message shape:** `{ "hubId": "H-501", "stage": 5, "timestamp": "2026-07-18T10:15:00Z" }`
+
+## Implemented endpoints
+
+| Service | Endpoint | Purpose |
+|---|---|---|
+| ingestion-service | `GET /hubs` | Cleaned, deduplicated hub records |
+| ingestion-service | `GET /hubs/{hubId}` | Record by canonical ID or any alias |
+| ingestion-service | `GET /stats` | Raw row, cleaned row, duplicate, and skipped counts |
+| hub-service | `GET /hubs`, `GET /hubs/{hubId}` | Cached copy of ingestion-service data |
+| hub-service | `GET /provinces`, `GET /provinces/{province}/hubs` | Place-name browsing |
+| hub-service | `GET /sorting-centers`, `POST /refresh` | Sorting centers and cache refresh |
+| delay-stage-service | `GET /delay-stage/{hubId}` | Current stage (defaults to `0`) |
+| delay-stage-service | `POST`/`PUT /delay-stage/{hubId}` | Set stage (`0`-`8`) and publish to MQ |
+| delay-stage-service | `GET /delay-stages` | All explicitly set stages |
+| transit-service | `GET /eta/{hubId}` | ETA window using hub data and the MQ-fed stage cache |
+| transit-service | `GET /delays`, `GET /delays/{hubId}` | Current stage cache |
+| alertbot | `GET /alerts` | Simulated posts raised so far |
+| alertbot | `GET /config` | Active threshold and simulated channel |
+
+Example ETA:
+
+```bash
+curl http://localhost:7053/eta/H-501
+```
+
+```json
+{
+  "hubId": "H-501",
+  "sortingCenter": "Cape Town Port",
+  "province": "Western Cape",
+  "stage": 5,
+  "stageDescription": "Extended hub shutdown",
+  "delayMinutes": 480,
+  "etaStart": "2026-07-18T19:00:00Z",
+  "etaEnd": "2026-07-18T19:30:00Z",
+  "status": "SEVERELY_DELAYED",
+  "calculatedAt": "2026-07-18T10:00:00Z"
+}
+```
 
 ## Project structure
 
@@ -144,36 +188,68 @@ cd alertbot && mvn package && java -jar target/alertbot.jar
 | TransitServiceApp (`transit-service`) | 7053 |
 | AlertBotApp (`alertbot`) | 7054 |
 
+## Implementation notes
+
+### Deduplication strategy
+
+Rows are grouped by normalized `sortingCenter` plus `province` (after inferring a
+missing province from other rows with the same sorting center). Each group becomes
+one hub:
+
+- the canonical ID is the lowest numeric ID in the group (`H-500` wins over `H-515`);
+- every original ID is retained in `aliases`, so lookups by any legacy ID still work;
+- `active` uses a majority vote across non-null values; ties fall back to the
+  canonical row's value, which keeps the result deterministic.
+
+This keeps the historical IDs usable while giving every downstream service one
+authoritative record per physical hub.
+
+### REST vs. MQ
+
+Live, request/response lookups (hub details, ETA calculation) stay synchronous REST
+because the caller needs an answer immediately. Stage changes are events, not
+queries: delay-stage-service publishes once and an arbitrary number of consumers can
+react without the producer knowing about them. transit-service replaces its direct
+delay-stage call with a topic subscription, and alertbot can be added without
+touching the producer.
+
+### With more time
+
+- Persist stages and alerts instead of keeping them in memory.
+- Add retry/backoff metrics and a dead-letter queue for poison messages.
+- Make the broker URL and service URLs fully configurable through environment
+  variables (service URLs already are; broker URL lives in `MqConfig`).
+- Add integration tests that start the services and broker together.
+
 ## Test
 
-No automated tests exist yet (this is a scaffold). Each running service exposes
-`/health`, so sanity-check manually:
+Each module has JUnit 5 tests:
+
+```
+mvn test -f ingestion-service/pom.xml
+mvn test -f delay-stage-service/pom.xml
+mvn test -f transit-service/pom.xml
+mvn test -f alertbot/pom.xml
+```
+
+Or from the project root:
+
+```
+find . -name pom.xml -execdir mvn -q test \;
+```
+
+Every running service also exposes `/health`:
 
 ```
 curl http://localhost:7050/health   # -> OK
 ```
 
-To add real tests to a module, add JUnit 5 and Surefire to its `pom.xml`:
-
-```xml
-<dependency>
-  <groupId>org.junit.jupiter</groupId>
-  <artifactId>junit-jupiter</artifactId>
-  <version>5.10.2</version>
-  <scope>test</scope>
-</dependency>
-```
-
-```xml
-<plugin>
-  <groupId>org.apache.maven.plugins</groupId>
-  <artifactId>maven-surefire-plugin</artifactId>
-  <version>3.2.5</version>
-</plugin>
-```
-
-then add tests under that module's `src/test/java/...` and run:
+End-to-end smoke check (broker running, all services up):
 
 ```
-mvn test
+curl -X POST http://localhost:7052/delay-stage/H-501 \
+  -H 'Content-Type: application/json' -d '{"stage": 5}'
+
+curl http://localhost:7053/eta/H-501
+curl http://localhost:7054/alerts
 ```

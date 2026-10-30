@@ -34,13 +34,19 @@ java -jar target/transit-service.jar
 
 Listens on port `7053`.
 
+Endpoints:
+
+- `GET /health` — liveness check
+- `GET /eta/{hubId}` — ETA window from hub details plus the current delay stage
+- `GET /delays`, `GET /delays/{hubId}` — stage cache fed by `package-status-topic`
+
+The stage is read from the MQ subscription, not by calling delay-stage-service.
+Unknown hubs return `404`; an unavailable hub-service returns `503`.
+
 ## Test
 
-No automated tests yet. Manually verify it's up:
+Run the automated tests with `mvn test`. You can also verify it's up:
 
 ```
 curl http://localhost:7053/health   # -> OK
 ```
-
-To add real tests, add JUnit 5 + the Surefire plugin to `pom.xml`, put tests under
-`src/test/java/co/wethinkcode/logisticsconnect/`, and run `mvn test`.

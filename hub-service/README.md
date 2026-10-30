@@ -29,13 +29,21 @@ java -jar target/hub-service.jar
 
 Listens on port `7051`.
 
+hub-service loads its data from ingestion-service (`INGESTION_SERVICE_URL`, default
+`http://localhost:7050`) and caches it. Endpoints:
+
+- `GET /health` — liveness check
+- `GET /hubs`, `GET /hubs/{hubId}` — cached hub records (aliases resolve)
+- `GET /provinces`, `GET /provinces/{province}/hubs` — place-name browsing
+- `GET /sorting-centers` — distinct sorting centers
+- `POST /refresh` — reload from ingestion-service
+
+If ingestion-service is down, endpoints return `503` and a later request retries.
+
 ## Test
 
-No automated tests yet. Manually verify it's up:
+Run the automated tests with `mvn test`. You can also verify it's up:
 
 ```
 curl http://localhost:7051/health   # -> OK
 ```
-
-To add real tests, add JUnit 5 + the Surefire plugin to `pom.xml`, put tests under
-`src/test/java/co/wethinkcode/logisticsconnect/`, and run `mvn test`.

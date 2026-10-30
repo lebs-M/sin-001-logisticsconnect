@@ -34,13 +34,21 @@ java -jar target/delay-stage-service.jar
 
 Listens on port `7052`.
 
+Endpoints:
+
+- `GET /health` — liveness check
+- `GET /delay-stage/{hubId}` — current stage (`0` by default)
+- `POST` / `PUT /delay-stage/{hubId}` — set a stage (`0`-`8`), e.g.
+  `{"stage": 5}`; publishes an event to `package-status-topic`
+- `GET /delay-stages` — all explicitly set stages
+
+Publishing failures are logged and do not fail the HTTP request; the next stage
+change reconnects to the broker.
+
 ## Test
 
-No automated tests yet. Manually verify it's up:
+Run the automated tests with `mvn test`. You can also verify it's up:
 
 ```
 curl http://localhost:7052/health   # -> OK
 ```
-
-To add real tests, add JUnit 5 + the Surefire plugin to `pom.xml`, put tests under
-`src/test/java/co/wethinkcode/logisticsconnect/`, and run `mvn test`.

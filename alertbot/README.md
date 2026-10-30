@@ -40,13 +40,20 @@ java -jar target/alertbot.jar
 
 Listens on port `7054`.
 
+Endpoints:
+
+- `GET /health` — liveness check
+- `GET /alerts` — simulated posts raised so far
+- `GET /config` — active threshold and simulated channel
+
+It subscribes to `package-status-topic` and posts a simulated social-media alert
+when a stage is at or above `ALERT_STAGE_THRESHOLD` (default `4`). Alerts are logged
+with the `SIMULATED SOCIAL POST` prefix and stored in memory.
+
 ## Test
 
-No automated tests yet. Manually verify it's up:
+Run the automated tests with `mvn test`. You can also verify it's up:
 
 ```
 curl http://localhost:7054/health   # -> OK
 ```
-
-To add real tests, add JUnit 5 + the Surefire plugin to `pom.xml`, put tests under
-`src/test/java/co/wethinkcode/logisticsconnect/`, and run `mvn test`.
